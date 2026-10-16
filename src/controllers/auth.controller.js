@@ -75,8 +75,13 @@ export const forgotPassword = async (req, res) => {
       { replacements: { hashedToken, expiresAt, id: user.id } },
     );
 
-    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-    const resetUrl = `${frontendUrl}/reset-password?token=${rawToken}`;
+    const frontendHost = (process.env.FRONTEND_URL || "http://localhost:5173")
+      .split(",")[0]
+      .trim();
+    const frontendUrl = frontendHost.startsWith("http")
+      ? frontendHost
+      : `https://${frontendHost}`;
+    const resetUrl = `${frontendUrl.replace(/\/+$/, "")}/reset-password?token=${rawToken}`;
 
     try {
       await sendPasswordResetEmail({
