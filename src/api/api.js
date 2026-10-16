@@ -1,6 +1,9 @@
 import axios from 'axios';
 
-const BACKEND_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const configuredBackendUrl = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const BACKEND_URL = configuredBackendUrl.startsWith("http")
+  ? configuredBackendUrl.replace(/\/+$/, "")
+  : `https://${configuredBackendUrl.replace(/\/+$/, "")}`;
 
 // 1. Configuración inicial
 const api = axios.create({
@@ -97,6 +100,9 @@ export const obtenerAsistenciaFecha = (claseId, fecha) => api.get('/asistencias'
 export const obtenerAsistenciasPorClaseYFecha = (claseId, fecha) => api.get('/asistencias', { params: { claseId, fecha } });
 export const getReporteAsistencias = (claseId, fecha) => api.get('/asistencias/reporte-detallado', { params: { claseId, fecha } });
 export const getMisAsistenciasAlumno = () => api.get('/asistencias/alumno/mis-asistencias');
+export const getAsistenciaGeneral = (anio, division, fecha) => api.get('/asistencias/general', { params: { anio, division, fecha } });
+export const registrarAsistenciaGeneral = (data) => api.post('/asistencias/general', data);
+export const compararAsistencias = (anio, division, fecha) => api.get('/asistencias/comparacion', { params: { anio, division, fecha } });
 
 // ==========================================
 //       NOTAS Y TAREAS

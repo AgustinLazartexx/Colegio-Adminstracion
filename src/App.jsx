@@ -122,7 +122,7 @@ function App() {
 
         {/* Rutas ADMIN */}
         <Route path="/admin/*" element={<PrivateRoute allowedRoles={["admin"]}><AdminDashboard /></PrivateRoute>}>
-          <Route index element={<h2>Inicio Admin</h2>} />
+          <Route index element={<DashboardAdmin />} />
           <Route path="Inicio" element={<DashboardAdmin />} />
           <Route path="usuarios" element={<UsuariosAdmin />} />
           <Route path="materias" element={<MateriasAdmin />} />
