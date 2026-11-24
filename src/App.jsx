@@ -53,6 +53,9 @@ import VerAsistenciasAdmin from "./pages/admin/VerAsistenciasAdmin";
 import AdminAuditoriaNotas from "./pages/admin/AdminPanelNotas";
 import AdminGestionNotas from "./pages/admin/AdminGestionNotas";
 import AdminGestionAlumnosClase from "./pages/admin/AdminGestionAlumnosClase";
+import CiclosLectivosAdmin from "./pages/admin/CiclosLectivosAdmin";
+import CuotasResumenAdmin from "./pages/admin/CuotasResumenAdmin";
+import AlumnosRiesgoAdmin from "./pages/admin/AlumnosRiesgoAdmin";
 
 
 function App() {
@@ -125,7 +128,10 @@ function App() {
           <Route index element={<DashboardAdmin />} />
           <Route path="Inicio" element={<DashboardAdmin />} />
           <Route path="usuarios" element={<UsuariosAdmin />} />
+          <Route path="cuotas" element={<CuotasResumenAdmin />} />
+          <Route path="riesgo-academico" element={<AlumnosRiesgoAdmin />} />
           <Route path="materias" element={<MateriasAdmin />} />
+          <Route path="ciclos" element={<CiclosLectivosAdmin />} />
           <Route path="CrearClases" element={<ClasesAdmin />} />
           
           <Route path="AsistenciaGestion" element={<TomarAsistenciaAdmin />} />

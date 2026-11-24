@@ -1,10 +1,17 @@
 import React, { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import { Loader2, Save, Check, Frown, AlertCircle, TrendingUp, Award } from "lucide-react";
-import { getAlumnosDeMateria, getNotasDeMateria, guardarNota } from "../../api/api";
+import {
+  cargarNotaRecuperacion,
+  getAlumnosDeClase,
+  getAlumnosDeMateria,
+  getNotasDeMateria,
+  getRecuperacionesMateria,
+  guardarNota,
+} from "../../api/api";
 
 // --- Componente Input Individual con Botón de Guardado ---
-const NotaInput = ({ alumnoId, materiaId, trimestre, tipoNota, valorInicial, onNotaGuardada }) => {
+const NotaInput = ({ alumnoId, materiaId, trimestre, tipoNota, valorInicial, onNotaGuardada, cicloLectivoId, readOnly, locked = false }) => {
   const [valorLocal, setValorLocal] = useState(valorInicial ?? "");
   const [isSaving, setIsSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
@@ -38,7 +45,8 @@ const NotaInput = ({ alumnoId, materiaId, trimestre, tipoNota, valorInicial, onN
         alumnoId,
         trimestre,
         tipoNota,
-        nota: notaEnviar
+        nota: notaEnviar,
+        ...(cicloLectivoId ? { cicloLectivoId } : {})
       });
 
       onNotaGuardada(trimestre, alumnoId, tipoNota, res.data.nota); 
@@ -72,10 +80,10 @@ const NotaInput = ({ alumnoId, materiaId, trimestre, tipoNota, valorInicial, onN
         step="0.01"
         value={valorLocal}
         onChange={(e) => setValorLocal(e.target.value)}
-        disabled={isSaving}
+        disabled={isSaving || readOnly || locked}
       />
       
-      {hayCambio && (
+      {hayCambio && !readOnly && !locked && (
         <button
           onClick={handleSave}
           disabled={isSaving}
@@ -99,6 +107,82 @@ const NotaInput = ({ alumnoId, materiaId, trimestre, tipoNota, valorInicial, onN
   );
 };
 
+const RecuperacionAnualInput = ({
+  alumnoId,
+  materiaId,
+  cicloLectivoId,
+  puntajeFinal,
+  recuperacion,
+  estadoMateria,
+  cicloEstado,
+  enabled,
+  onSaved,
+}) => {
+  const [valor, setValor] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setValor("");
+  }, [alumnoId, recuperacion]);
+
+  if (puntajeFinal === null) return <span className="text-xs text-gray-400">Notas incompletas</span>;
+  if (puntajeFinal >= 18) return <span className="text-xs font-medium text-emerald-700">No requiere</span>;
+  if (recuperacion !== null && recuperacion !== undefined) {
+    return (
+      <span className={`rounded-lg px-2 py-1 text-sm font-bold ${estadoMateria === "APROBADA_RECUPERACION" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
+        {Number(recuperacion).toFixed(2)}
+      </span>
+    );
+  }
+  if (!enabled) {
+    return <span className="text-xs text-gray-400">{cicloEstado === "CERRADO" ? "No registrada" : "Pendiente"}</span>;
+  }
+
+  const save = async () => {
+    const nota = Number(valor);
+    if (!Number.isFinite(nota) || nota < 1 || nota > 10) {
+      toast.warning("La nota de recuperación debe estar entre 1 y 10.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const { data } = await cargarNotaRecuperacion(cicloLectivoId, materiaId, alumnoId, nota);
+      onSaved(data);
+      setValor("");
+      toast.success("Recuperación guardada.");
+    } catch (error) {
+      toast.error(error.response?.data?.msg || "No se pudo guardar la recuperación.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-center gap-1">
+      <input
+        type="number"
+        min="1"
+        max="10"
+        step="0.01"
+        value={valor}
+        onChange={(event) => setValor(event.target.value)}
+        disabled={saving}
+        aria-label="Nota de recuperación anual"
+        className="w-16 rounded-lg border-2 border-orange-200 px-2 py-2 text-center text-sm focus:border-orange-500 focus:outline-none"
+      />
+      <button
+        type="button"
+        onClick={save}
+        disabled={saving || !valor}
+        className="rounded-lg bg-orange-500 p-2 text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-40"
+        title="Guardar recuperación anual"
+      >
+        {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+      </button>
+    </div>
+  );
+};
+
 // --- Componente Celda Promedio ---
 const PromedioCell = ({ valor }) => {
     const num = valor ? Number(valor) : null;
@@ -118,10 +202,20 @@ const PromedioCell = ({ valor }) => {
 };
 
 // --- Componente Principal de la Tabla ---
-const CargarNotas = ({ materiaId, materiaNombre, anio, division }) => {
+const CargarNotas = ({
+  materiaId,
+  materiaNombre,
+  anio,
+  division,
+  claseId,
+  cicloLectivoId,
+  cicloEstado,
+  readOnly = false,
+}) => {
   const [alumnos, setAlumnos] = useState([]);
   const [trimestre, setTrimestre] = useState("1");
   const [notasData, setNotasData] = useState({ "1": {}, "2": {}, "3": {} });
+  const [recuperaciones, setRecuperaciones] = useState({});
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -130,20 +224,26 @@ const CargarNotas = ({ materiaId, materiaNombre, anio, division }) => {
     const loadData = async () => {
       setLoading(true);
       try {
-        const resAlumnos = await getAlumnosDeMateria(materiaId);
+        const resAlumnos = claseId
+          ? await getAlumnosDeClase(claseId)
+          : await getAlumnosDeMateria(materiaId);
         setAlumnos(resAlumnos.data || []);
 
         const [t1, t2, t3] = await Promise.all([
-            getNotasDeMateria(materiaId, "1"),
-            getNotasDeMateria(materiaId, "2"),
-            getNotasDeMateria(materiaId, "3")
+            getNotasDeMateria(materiaId, "1", cicloLectivoId),
+            getNotasDeMateria(materiaId, "2", cicloLectivoId),
+            getNotasDeMateria(materiaId, "3", cicloLectivoId)
         ]);
+        const recoveryRows = cicloLectivoId && ["RECUPERACION", "CERRADO"].includes(cicloEstado)
+          ? (await getRecuperacionesMateria(cicloLectivoId, materiaId)).data
+          : [];
 
         setNotasData({
             "1": t1.data || {},
             "2": t2.data || {},
             "3": t3.data || {}
         });
+        setRecuperaciones(Object.fromEntries(recoveryRows.map((row) => [row.alumnoId, row])));
 
       } catch (error) {
         console.error("Error cargando datos:", error);
@@ -154,7 +254,7 @@ const CargarNotas = ({ materiaId, materiaNombre, anio, division }) => {
     };
 
     loadData();
-  }, [materiaId]);
+  }, [materiaId, claseId, cicloLectivoId, cicloEstado]);
 
   const handleNotaLocalUpdate = (tri, alumnoId, tipo, notaObj) => {
      setNotasData(prev => ({
@@ -189,6 +289,35 @@ const CargarNotas = ({ materiaId, materiaNombre, anio, division }) => {
   }
 
   const notasDelTrimestre = notasData[trimestre] || {};
+  const calcularResultadoAnual = (alumnoId) => {
+    const calificaciones = ["1", "2", "3"].map(
+      (periodo) => notasData[periodo]?.[alumnoId]?.notaFinalTrimestre,
+    );
+    if (calificaciones.some((nota) => nota === null || nota === undefined)) {
+      return { puntajeFinal: null, estadoMateria: "INCOMPLETA" };
+    }
+    const puntajeFinal = calificaciones.reduce((sum, nota) => sum + Number(nota), 0);
+    const recuperacion = recuperaciones[alumnoId]?.notaRecuperacion;
+    if (puntajeFinal >= 18) return { puntajeFinal, estadoMateria: "APROBADA" };
+    if (recuperacion !== null && recuperacion !== undefined) {
+      return {
+        puntajeFinal,
+        estadoMateria: Number(recuperacion) >= 6 ? "APROBADA_RECUPERACION" : "DESAPROBADA",
+      };
+    }
+    return {
+      puntajeFinal,
+      estadoMateria: cicloEstado === "CERRADO" ? "DESAPROBADA" : "A_RECUPERACION",
+    };
+  };
+  const estadoClase = (estado) => ({
+    APROBADA: "bg-green-100 text-green-800",
+    APROBADA_RECUPERACION: "bg-green-100 text-green-800",
+    A_RECUPERACION: "bg-orange-100 text-orange-800",
+    DESAPROBADA: "bg-red-100 text-red-800",
+    INCOMPLETA: "bg-gray-100 text-gray-600",
+  }[estado] || "bg-gray-100 text-gray-600");
+  const notasBloqueadas = readOnly || cicloEstado === "RECUPERACION";
 
   return (
     <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
@@ -233,11 +362,26 @@ const CargarNotas = ({ materiaId, materiaNombre, anio, division }) => {
         </div>
       </div>
 
+      {cicloEstado === "RECUPERACION" && (
+        <div className="border-b border-violet-200 bg-violet-50 px-6 py-3 text-sm font-medium text-violet-900" role="status">
+          Ciclo en recuperación: las notas trimestrales están bloqueadas. Solo cargá recuperación para puntajes anuales menores a 18.
+        </div>
+      )}
+      {readOnly && cicloEstado !== "RECUPERACION" && (
+        <div className="border-b border-amber-200 bg-amber-50 px-6 py-3 text-sm font-medium text-amber-900" role="status">
+          Modo Solo Lectura: no se pueden editar las notas de este ciclo.
+        </div>
+      )}
+
       {/* Información de Ayuda */}
       <div className="bg-blue-50 border-b border-blue-100 px-6 py-3">
         <div className="flex items-center gap-2 text-sm text-blue-800">
           <AlertCircle className="w-4 h-4" />
-          <span className="font-medium">Ingresa las notas y presiona el botón <Save className="w-3.5 h-3.5 inline" /> para guardar cada calificación.</span>
+          <span className="font-medium">
+            {cicloEstado === "RECUPERACION"
+              ? "La recuperación anual se habilita únicamente con tres notas trimestrales completas y suma menor a 18."
+              : <>Ingresa las notas y presiona <Save className="w-3.5 h-3.5 inline" /> para guardar cada calificación.</>}
+          </span>
         </div>
       </div>
 
@@ -265,16 +409,21 @@ const CargarNotas = ({ materiaId, materiaNombre, anio, division }) => {
                       Promedio
                     </th>
                     <th className="px-4 py-4 text-center text-xs font-bold text-orange-700 uppercase tracking-wider bg-orange-50 border-l-2 border-orange-200">
-                      Recuperación
+                      {["RECUPERACION", "CERRADO"].includes(cicloEstado) ? "Recuperación anual" : "Recuperación trimestral"}
                     </th>
                     <th className="px-4 py-4 text-center text-xs font-bold text-emerald-700 uppercase tracking-wider bg-emerald-50 border-l-2 border-emerald-200">
                       Nota Final
+                    </th>
+                    <th className="px-4 py-4 text-center text-xs font-bold text-indigo-700 uppercase tracking-wider bg-indigo-50 border-l-2 border-indigo-200">
+                      Puntaje final anual
                     </th>
                 </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
                 {alumnos.map((alumno, idx) => {
                     const notasAlumno = notasDelTrimestre[alumno._id] || {};
+                    const anual = calcularResultadoAnual(alumno._id);
+                    const recuperacionAnual = recuperaciones[alumno._id] || {};
                     
                     return (
                         <tr 
@@ -301,13 +450,15 @@ const CargarNotas = ({ materiaId, materiaNombre, anio, division }) => {
 
                             {/* Inputs de Notas con Botones */}
                             <td className="px-4 py-4 text-center border-l border-gray-100">
-                                <NotaInput 
-                                    alumnoId={alumno._id} 
-                                    materiaId={materiaId} 
+                                <NotaInput
+                                    alumnoId={alumno._id}
+                                    materiaId={materiaId}
                                     trimestre={trimestre}
                                     tipoNota="orientadora" 
                                     valorInicial={notasAlumno.orientadora}
                                     onNotaGuardada={handleNotaLocalUpdate}
+                                    cicloLectivoId={cicloLectivoId}
+                                    readOnly={notasBloqueadas}
                                 />
                             </td>
                             <td className="px-4 py-4 text-center border-l border-gray-100">
@@ -318,6 +469,8 @@ const CargarNotas = ({ materiaId, materiaNombre, anio, division }) => {
                                     tipoNota="proceso" 
                                     valorInicial={notasAlumno.proceso}
                                     onNotaGuardada={handleNotaLocalUpdate}
+                                    cicloLectivoId={cicloLectivoId}
+                                    readOnly={notasBloqueadas}
                                 />
                             </td>
                             <td className="px-4 py-4 text-center border-l border-gray-100">
@@ -328,6 +481,8 @@ const CargarNotas = ({ materiaId, materiaNombre, anio, division }) => {
                                     tipoNota="integradora" 
                                     valorInicial={notasAlumno.integradora}
                                     onNotaGuardada={handleNotaLocalUpdate}
+                                    cicloLectivoId={cicloLectivoId}
+                                    readOnly={notasBloqueadas}
                                 />
                             </td>
 
@@ -338,19 +493,46 @@ const CargarNotas = ({ materiaId, materiaNombre, anio, division }) => {
 
                             {/* Recuperación */}
                             <td className="px-4 py-4 text-center bg-orange-50/30 border-l-2 border-orange-100">
-                                <NotaInput 
-                                    alumnoId={alumno._id} 
-                                    materiaId={materiaId} 
-                                    trimestre={trimestre}
-                                    tipoNota="recuperacion" 
-                                    valorInicial={notasAlumno.recuperacion}
-                                    onNotaGuardada={handleNotaLocalUpdate}
-                                />
+                                {cicloEstado === "RECUPERACION" || cicloEstado === "CERRADO" ? (
+                                  <RecuperacionAnualInput
+                                    alumnoId={alumno._id}
+                                    materiaId={materiaId}
+                                    cicloLectivoId={cicloLectivoId}
+                                    puntajeFinal={anual.puntajeFinal}
+                                    recuperacion={recuperacionAnual.notaRecuperacion}
+                                    estadoMateria={recuperacionAnual.estadoMateria}
+                                    cicloEstado={cicloEstado}
+                                    enabled={cicloEstado === "RECUPERACION" && !readOnly}
+                                    onSaved={(result) => setRecuperaciones((current) => ({
+                                      ...current,
+                                      [alumno._id]: { ...current[alumno._id], ...result },
+                                    }))}
+                                  />
+                                ) : (
+                                  <NotaInput
+                                      alumnoId={alumno._id}
+                                      materiaId={materiaId}
+                                      trimestre={trimestre}
+                                      tipoNota="recuperacion"
+                                      valorInicial={notasAlumno.recuperacion}
+                                      onNotaGuardada={handleNotaLocalUpdate}
+                                      cicloLectivoId={cicloLectivoId}
+                                      readOnly={notasBloqueadas}
+                                  />
+                                )}
                             </td>
 
                             {/* Nota Final */}
                             <td className="px-4 py-4 text-center bg-emerald-50/30 border-l-2 border-emerald-100 font-mono">
                                 <PromedioCell valor={notasAlumno.notaFinalTrimestre} />
+                            </td>
+                            <td className="px-4 py-4 text-center bg-indigo-50/30 border-l-2 border-indigo-100">
+                              <div className="font-mono font-bold text-slate-800">
+                                {anual.puntajeFinal === null ? "—" : anual.puntajeFinal.toFixed(2)}
+                              </div>
+                              <span className={`mt-1 inline-block rounded-full px-2 py-1 text-[10px] font-semibold ${estadoClase(anual.estadoMateria)}`}>
+                                {anual.estadoMateria.replaceAll("_", " ")}
+                              </span>
                             </td>
                         </tr>
                     );

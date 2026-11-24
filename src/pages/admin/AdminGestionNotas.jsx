@@ -3,10 +3,13 @@ import { useAuth } from '../../context/AuthContext';
 import { toast } from 'react-toastify';
 import { Filter, GraduationCap, Loader2, Search, BookOpen, Users, ListChecks } from 'lucide-react';
 import CargarNotas from '../profesor/CargarNotas';
-import { getMaterias } from '../../api/api';
+import { getTodasLasClases } from '../../api/api';
+import CycleSelector, { CycleStatusNotice } from '../../components/admin/CycleSelector';
+import { useAcademicCycles } from '../../hooks/useAcademicCycles';
 
 const AdminGestionNotas = () => {
   const { token } = useAuth();
+  const { cycles, cycleId, setCycleId, selectedCycle, loadingCycles } = useAcademicCycles();
   const [allMaterias, setAllMaterias] = useState([]);
   const [filteredMaterias, setFilteredMaterias] = useState([]);
   const [selectedAnio, setSelectedAnio] = useState('');
@@ -19,22 +22,40 @@ const AdminGestionNotas = () => {
 
   useEffect(() => {
     const fetchAllMaterias = async () => {
+      if (!cycleId) return;
       setLoadingMaterias(true);
       try {
-        const res = await getMaterias();
-        const data = Array.isArray(res.data) ? res.data : (res.data.materias || []);
+        const res = await getTodasLasClases({ cicloLectivoId: cycleId });
+        const classes = Array.isArray(res.data) ? res.data : (res.data.clases || []);
+        const uniqueSubjects = new Map();
+        classes.forEach((clase) => {
+          const materiaId = clase.materia?._id || clase.materiaId;
+          if (!materiaId || !clase.materia?.nombre) return;
+          const key = `${materiaId}:${clase.nivel ?? clase.anio}:${clase.division}`;
+          if (!uniqueSubjects.has(key)) {
+            uniqueSubjects.set(key, {
+              _id: materiaId,
+              claseId: clase._id || clase.id,
+              nombre: clase.materia.nombre,
+              anio: clase.nivel ?? clase.anio,
+              division: clase.division,
+              profesor: clase.profesores?.[0] || null,
+            });
+          }
+        });
+        const data = [...uniqueSubjects.values()];
         setAllMaterias(data);
         setFilteredMaterias(data);
       } catch (err) {
-        console.error("Error cargando materias:", err);
-        toast.error("Error al cargar el listado de materias.");
+        console.error("Error cargando clases del ciclo:", err);
+        toast.error(err.response?.data?.msg || "Error al cargar las materias del ciclo.");
       } finally {
         setLoadingMaterias(false);
       }
     };
 
     fetchAllMaterias();
-  }, [token]);
+  }, [token, cycleId]);
 
   useEffect(() => {
     setFilteredMaterias(allMaterias.filter((materia) =>
@@ -45,7 +66,7 @@ const AdminGestionNotas = () => {
     setSelectedMateriaId('');
   }, [selectedAnio, selectedDivision, searchTerm, allMaterias]);
 
-  const materiaActiva = allMaterias.find(m => m._id === selectedMateriaId);
+  const materiaActiva = allMaterias.find(m => m.claseId === selectedMateriaId);
   const hasActiveFilters = Boolean(selectedAnio || selectedDivision || searchTerm.trim());
 
   return (
@@ -80,6 +101,13 @@ const AdminGestionNotas = () => {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-8 space-y-6">
+        <div className="grid gap-3 md:grid-cols-[minmax(240px,1fr)_2fr] md:items-end">
+          <CycleSelector cycles={cycles} value={cycleId} onChange={(value) => {
+            setCycleId(value);
+            setSelectedMateriaId('');
+          }} disabled={loadingCycles} />
+          <CycleStatusNotice cycle={selectedCycle} />
+        </div>
         {/* Panel de Filtros Mejorado */}
         <div className="bg-white rounded-2xl shadow-md border border-gray-100 overflow-hidden">
           <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-4 border-b border-gray-200">
@@ -177,7 +205,7 @@ const AdminGestionNotas = () => {
                     >
                       <option value=""> Seleccionar materia</option>
                       {filteredMaterias.map(m => (
-                        <option key={m._id} value={m._id}>
+                        <option key={m.claseId} value={m.claseId}>
                           {m.nombre} ({m.anio}° "{m.division || 'U'}") - {m.profesor?.nombre || 'Sin Profesor'}
                         </option>
                       ))}
@@ -226,10 +254,14 @@ const AdminGestionNotas = () => {
             </div>
             <div className="p-6">
               <CargarNotas
-                materiaId={selectedMateriaId}
+                materiaId={materiaActiva._id}
+                claseId={materiaActiva.claseId}
                 materiaNombre={materiaActiva.nombre}
                 anio={materiaActiva.anio}
                 division={materiaActiva.division}
+                cicloLectivoId={cycleId}
+                cicloEstado={selectedCycle?.estado}
+                readOnly={selectedCycle?.estado === "CERRADO" || selectedCycle?.estado === "PLANIFICADO"}
               />
             </div>
           </div>

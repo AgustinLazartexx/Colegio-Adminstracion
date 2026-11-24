@@ -19,6 +19,8 @@ import {
   getTodasLasClases,
   getReporteAsistencias,
 } from "../../api/api";
+import CycleSelector, { CycleStatusNotice } from "../../components/admin/CycleSelector";
+import { useAcademicCycles } from "../../hooks/useAcademicCycles";
 
 const getFechaLocal = () => {
   const fecha = new Date();
@@ -29,6 +31,7 @@ const getFechaLocal = () => {
 };
 
 const VerAsistenciasAdmin = () => {
+  const { cycles, cycleId, setCycleId, selectedCycle, loadingCycles } = useAcademicCycles();
   const [asistencias, setAsistencias] = useState([]);
   const [clases, setClases] = useState([]); 
   const [loading, setLoading] = useState(false);
@@ -45,8 +48,9 @@ const VerAsistenciasAdmin = () => {
   useEffect(() => {
     const fetchClases = async () => {
       try {
+        if (!cycleId) return;
         // USAR LA FUNCIÓN DE API.JS
-        const res = await getTodasLasClases(); 
+        const res = await getTodasLasClases({ cicloLectivoId: cycleId });
         setClases(res.data.clases || res.data || []); 
       } catch (err) {
         console.error(err);
@@ -54,7 +58,13 @@ const VerAsistenciasAdmin = () => {
       }
     };
     fetchClases();
-  }, []);
+  }, [cycleId]);
+
+  useEffect(() => {
+    setFiltros((current) => ({ ...current, claseId: "" }));
+    setAsistencias([]);
+    setComparacion(null);
+  }, [cycleId]);
 
   // Buscar reporte
   const fetchReporte = async () => {
@@ -66,7 +76,7 @@ const VerAsistenciasAdmin = () => {
     setLoading(true);
     try {
       // USAR LA NUEVA FUNCIÓN DE API.JS
-      const res = await getReporteAsistencias(filtros.claseId, filtros.fecha);
+      const res = await getReporteAsistencias(filtros.claseId, filtros.fecha, cycleId);
       const registros = Array.isArray(res.data) ? res.data : [];
       setAsistencias(registros);
       if (registros.length === 0) toast.info("No hay asistencias registradas para esa fecha.");
@@ -87,7 +97,7 @@ const VerAsistenciasAdmin = () => {
     setLoading(true);
     setComparacion(null);
     try {
-      const { data } = await compararAsistencias(curso.anio, curso.division, filtros.fecha);
+      const { data } = await compararAsistencias(curso.anio, curso.division, filtros.fecha, cycleId);
       setComparacion(data);
       if (data.alumnos.length === 0) toast.info("No hay alumnos registrados en ese curso.");
     } catch (err) {
@@ -130,6 +140,10 @@ const VerAsistenciasAdmin = () => {
             <h1 className="text-3xl font-bold text-gray-900">Historial de asistencias</h1>
             <p className="text-gray-500">Elegí una clase y una fecha para consultar la lista de alumnos.</p>
           </div>
+        </div>
+        <div className="mb-6 grid gap-3 md:grid-cols-[minmax(240px,1fr)_2fr] md:items-end">
+          <CycleSelector cycles={cycles} value={cycleId} onChange={setCycleId} disabled={loadingCycles} />
+          <CycleStatusNotice cycle={selectedCycle} />
         </div>
 
         <div className="flex flex-wrap gap-2">

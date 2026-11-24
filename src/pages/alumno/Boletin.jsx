@@ -1,16 +1,25 @@
 import React, { useEffect, useState } from "react";
-import SidebarAlumno from "../../components/sidebar/SidebarAlumno";
-import { getMisNotasAlumno } from "../../api/api";
-import { Book, Award, AlertCircle } from "lucide-react";
+import { getMisMateriasPrevias, getMisNotasAlumno } from "../../api/api";
+import { Book, Award, AlertCircle, BookOpenCheck } from "lucide-react";
+import CycleSelector, { CycleStatusNotice } from "../../components/admin/CycleSelector";
+import { useAcademicCycles } from "../../hooks/useAcademicCycles";
 
 const Boletin = () => {
   const [boletin, setBoletin] = useState([]);
+  const [previas, setPrevias] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingPrevias, setLoadingPrevias] = useState(true);
+  const { cycles, cycleId, setCycleId, selectedCycle, loadingCycles } = useAcademicCycles();
 
   useEffect(() => {
     const cargarNotas = async () => {
+      if (!cycleId) {
+        if (!loadingCycles) setLoading(false);
+        return;
+      }
+      setLoading(true);
       try {
-        const res = await getMisNotasAlumno();
+        const res = await getMisNotasAlumno(cycleId);
         // res.data.notas es el array plano que viene del backend
         const notasPlanas = res.data.notas || [];
         
@@ -27,9 +36,12 @@ const Boletin = () => {
               t1: null,
               t2: null,
               t3: null,
-              promedioFinal: null // Aquí podrías calcular un promedio anual si quisieras
+              notaRecuperacion: null,
+              estadoMateria: null,
             };
           }
+          materiasMap[idMateria].notaRecuperacion = nota.notaRecuperacion;
+          materiasMap[idMateria].estadoMateria = nota.estadoMateria;
 
           // Asignamos la nota final de ese trimestre a la columna correspondiente
           // 'notaFinalTrimestre' es el campo que calcula tu backend (incluye recuperatorios)
@@ -46,6 +58,20 @@ const Boletin = () => {
       }
     };
     cargarNotas();
+  }, [cycleId, loadingCycles]);
+
+  useEffect(() => {
+    const cargarPrevias = async () => {
+      try {
+        const { data } = await getMisMateriasPrevias();
+        setPrevias(Array.isArray(data) ? data : []);
+      } catch (error) {
+        console.error("Error al cargar materias previas:", error);
+      } finally {
+        setLoadingPrevias(false);
+      }
+    };
+    cargarPrevias();
   }, []);
 
   // Función para pintar la nota de color (Rojo si desaprueba, Verde/Negro si aprueba)
@@ -71,6 +97,31 @@ const Boletin = () => {
           <p className="text-gray-600 mt-2">Resumen de calificaciones trimestrales.</p>
         </header>
 
+        <div className="mb-6 grid gap-3 md:grid-cols-[minmax(240px,1fr)_2fr] md:items-end">
+          <CycleSelector cycles={cycles} value={cycleId} onChange={setCycleId} disabled={loadingCycles} />
+          <CycleStatusNotice cycle={selectedCycle} />
+        </div>
+
+        <section className="mb-8 rounded-xl border border-amber-200 bg-amber-50 p-5">
+          <h2 className="mb-3 flex items-center gap-2 text-lg font-bold text-amber-950">
+            <BookOpenCheck size={20} /> Materias previas
+          </h2>
+          {loadingPrevias ? (
+            <p className="text-sm text-amber-900">Cargando materias previas...</p>
+          ) : previas.filter((previa) => previa.estado === "PENDIENTE").length === 0 ? (
+            <p className="text-sm text-amber-900">No tenés materias previas pendientes.</p>
+          ) : (
+            <ul className="space-y-2">
+              {previas.filter((previa) => previa.estado === "PENDIENTE").map((previa) => (
+                <li key={previa._id} className="flex flex-wrap justify-between gap-2 rounded-lg bg-white px-3 py-2 text-sm">
+                  <span className="font-semibold text-slate-800">{previa.materia}</span>
+                  <span className="text-amber-800">{previa.anioOrigen} · Pendiente</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
         {loading ? (
           <div className="text-center p-10">Cargando notas...</div>
         ) : boletin.length === 0 ? (
@@ -88,7 +139,9 @@ const Boletin = () => {
                     <th className="p-4 font-semibold text-center w-24">1º Trim</th>
                     <th className="p-4 font-semibold text-center w-24">2º Trim</th>
                     <th className="p-4 font-semibold text-center w-24">3º Trim</th>
-                    <th className="p-4 font-semibold text-center w-32 bg-blue-700">Promedio</th>
+                    <th className="p-4 font-semibold text-center w-32 bg-blue-700">Puntaje final</th>
+                    <th className="p-4 font-semibold text-center w-32">Recuperación</th>
+                    <th className="p-4 font-semibold text-center w-40 bg-blue-700">Estado</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -98,15 +151,36 @@ const Boletin = () => {
                       <td className="p-4 text-center bg-gray-50/50">{renderNota(mat.t1)}</td>
                       <td className="p-4 text-center">{renderNota(mat.t2)}</td>
                       <td className="p-4 text-center bg-gray-50/50">{renderNota(mat.t3)}</td>
-                      <td className="p-4 text-center font-bold bg-blue-50 text-blue-800">
-                        {/* Cálculo simple de promedio anual visual (opcional) */}
-                        {(() => {
-                           const notas = [mat.t1, mat.t2, mat.t3].filter(n => n !== null);
-                           if (notas.length === 0) return "-";
-                           const prom = notas.reduce((a, b) => a + b, 0) / notas.length;
-                           return prom.toFixed(2);
-                        })()}
-                      </td>
+                      {(() => {
+                        const grades = [mat.t1, mat.t2, mat.t3];
+                        const complete = grades.every((grade) => grade !== null && grade !== undefined);
+                        const total = complete ? grades.reduce((sum, grade) => sum + Number(grade), 0) : null;
+                        const state = total === null
+                          ? "INCOMPLETA"
+                          : total >= 18
+                            ? "APROBADA"
+                            : mat.estadoMateria || (selectedCycle?.estado === "CERRADO" ? "DESAPROBADA" : "A_RECUPERACION");
+                        const stateStyles = {
+                          APROBADA: "bg-green-100 text-green-800",
+                          APROBADA_RECUPERACION: "bg-green-100 text-green-800",
+                          A_RECUPERACION: "bg-orange-100 text-orange-800",
+                          DESAPROBADA: "bg-red-100 text-red-800",
+                          INCOMPLETA: "bg-gray-100 text-gray-600",
+                        };
+                        return (
+                          <>
+                            <td className="p-4 text-center font-bold bg-blue-50 text-blue-800">
+                              {total === null ? "—" : total.toFixed(2)}
+                            </td>
+                            <td className="p-4 text-center">{renderNota(mat.notaRecuperacion)}</td>
+                            <td className="p-4 text-center">
+                              <span className={`rounded-full px-2 py-1 text-xs font-semibold ${stateStyles[state] || stateStyles.INCOMPLETA}`}>
+                                {state.replaceAll("_", " ")}
+                              </span>
+                            </td>
+                          </>
+                        );
+                      })()}
                     </tr>
                   ))}
                 </tbody>
