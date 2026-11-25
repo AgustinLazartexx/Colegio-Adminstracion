@@ -5,6 +5,14 @@ import { getCuotasDeAlumno, generarCuota, registrarPagoCuota, marcarCuotaVencida
 import CycleSelector, { CycleStatusNotice } from "../../components/admin/CycleSelector";
 import { useAcademicCycles } from "../../hooks/useAcademicCycles";
 
+const formatDate = (value) => {
+  if (!value) return "—";
+  const date = typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(`${value}T00:00:00`)
+    : new Date(value);
+  return Number.isNaN(date.valueOf()) ? "—" : date.toLocaleDateString("es-AR");
+};
+
 const AdminGestionCuotas = ({ alumno, onClose }) => {
   const { cycles, cycleId, setCycleId, selectedCycle, loadingCycles } = useAcademicCycles();
   const [cuotas, setCuotas] = useState([]);
@@ -180,7 +188,7 @@ const AdminGestionCuotas = ({ alumno, onClose }) => {
                                         <td className="p-3 font-medium">{c.mes}/{c.anio}</td>
                                         <td className="p-3">${c.monto}</td>
                                         <td className="p-3 text-gray-500">
-                                            {new Date(c.fechaVencimiento).toLocaleDateString()}
+                                            {formatDate(c.fechaVencimiento)}
                                         </td>
                                         <td className="p-3">
                                             <span className={`px-2 py-1 rounded-full text-xs font-bold ${

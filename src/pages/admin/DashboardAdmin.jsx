@@ -95,7 +95,7 @@ const DashboardAdmin = () => {
       setActivityError("");
       const [statsResult, auditResult] = await Promise.allSettled([
         cycleId ? getAdminStats(cycleId) : Promise.resolve({ data: null }),
-        getAuditoriaNotas(),
+        cycleId ? getAuditoriaNotas(cycleId) : Promise.resolve({ data: [] }),
       ]);
 
       if (!active) return;

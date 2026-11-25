@@ -40,6 +40,9 @@ const AdminGestionNotas = () => {
               anio: clase.nivel ?? clase.anio,
               division: clase.division,
               profesor: clase.profesores?.[0] || null,
+              turno: clase.turno,
+              horaInicio: clase.horaInicio,
+              horaFin: clase.horaFin,
             });
           }
         });
@@ -259,8 +262,20 @@ const AdminGestionNotas = () => {
                 materiaNombre={materiaActiva.nombre}
                 anio={materiaActiva.anio}
                 division={materiaActiva.division}
+                profesorNombre={materiaActiva.profesor?.nombre}
+                turno={materiaActiva.turno}
+                horaInicio={materiaActiva.horaInicio}
+                horaFin={materiaActiva.horaFin}
+                cicloAnio={selectedCycle?.anio}
                 cicloLectivoId={cycleId}
                 cicloEstado={selectedCycle?.estado}
+                allowBoletinExport
+                materiasBoletin={allMaterias
+                  .filter((materia) =>
+                    String(materia.anio) === String(materiaActiva.anio) &&
+                    String(materia.division || "").toUpperCase() === String(materiaActiva.division || "").toUpperCase(),
+                  )
+                  .map((materia) => ({ _id: materia._id, nombre: materia.nombre }))}
                 readOnly={selectedCycle?.estado === "CERRADO" || selectedCycle?.estado === "PLANIFICADO"}
               />
             </div>

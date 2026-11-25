@@ -651,7 +651,7 @@ const UsuariosAdmin = () => {
       )}
 
       {selectedUser && (
-        <UserDetailDrawer
+        <UsuarioDetailDrawer
           usuario={selectedUser}
           cycleId={cycleId}
           selectedCycle={selectedCycle}

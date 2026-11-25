@@ -86,14 +86,17 @@ export const getClaseById = (id) => api.get(`/clases/${id}`);
 export const getAlumnosDeClase = (claseId) => api.get(`/clases/${claseId}/alumnos`);
 export const cambiarEstadoAlumnoDeClase = (claseId, alumnoId, isActive) =>
   api.put(`/clases/${claseId}/alumnos/${alumnoId}/estado`, { isActive });
-export const getMisClasesAlumno = () => api.get('/clases/alumno/mis-clases');
+export const getMisClasesAlumno = (cicloLectivoId) =>
+  api.get('/clases/alumno/mis-clases', { params: cicloLectivoId ? { cicloLectivoId } : {} });
 
 // ==========================================
 //    FUNCIONES "VIEJAS" O DE MATERIAS 
 //    (Necesarias para CargarNotas.jsx)
 // ==========================================
-export const getAlumnosDeMateria = (materiaId) => {
-  return api.get(`/materias/${materiaId}/alumnos`);
+export const getAlumnosDeMateria = (materiaId, cicloLectivoId) => {
+  return api.get(`/materias/${materiaId}/alumnos`, {
+    params: cicloLectivoId ? { cicloLectivoId } : {},
+  });
 };
 
 export const getNotasDeMateria = (materiaId, trimestre, cicloLectivoId) => {
@@ -118,6 +121,8 @@ export const obtenerAsistenciaFecha = (claseId, fecha) => api.get('/asistencias'
 export const obtenerAsistenciasPorClaseYFecha = (claseId, fecha) => api.get('/asistencias', { params: { claseId, fecha } });
 export const getReporteAsistencias = (claseId, fecha, cicloLectivoId) =>
   api.get('/asistencias/reporte-detallado', { params: { claseId, fecha, cicloLectivoId } });
+export const getReporteAsistenciasMensual = (claseId, mes, cicloLectivoId) =>
+  api.get('/asistencias/reporte-mensual', { params: { claseId, mes, cicloLectivoId } });
 export const getMisAsistenciasAlumno = (cicloLectivoId) =>
   api.get('/asistencias/alumno/mis-asistencias', { params: cicloLectivoId ? { cicloLectivoId } : {} });
 export const getAsistenciaGeneral = (anio, division, fecha) => api.get('/asistencias/general', { params: { anio, division, fecha } });
@@ -128,11 +133,8 @@ export const compararAsistencias = (anio, division, fecha, cicloLectivoId) =>
 // ==========================================
 //       NOTAS Y TAREAS
 // ==========================================
-export const getNotasPorClase = (claseId) => api.get(`/notas/clase/${claseId}`);
-export const crearNota = (data) => api.post('/notas', data);
-export const updateNota = (id, data) => api.put(`/notas/${id}`, data);
-export const deleteNota = (id) => api.delete(`/notas/${id}`);
-export const getAuditoriaNotas = () => api.get('/notas/auditoria');
+export const getAuditoriaNotas = (cicloLectivoId) =>
+  api.get('/notas/auditoria', { params: cicloLectivoId ? { cicloLectivoId } : {} });
 export const guardarNota = (data) => api.post('/notas/guardar-una', data);
 
 export const crearTarea = (data) => api.post('/tareas', data);

@@ -1,14 +1,20 @@
 import React, { useEffect, useState } from "react";
 import { toast } from "react-toastify";
-import { Loader2, Save, Check, Frown, AlertCircle, TrendingUp, Award } from "lucide-react";
+import { Loader2, Save, Check, Frown, AlertCircle, TrendingUp, Award, FileDown } from "lucide-react";
 import {
   cargarNotaRecuperacion,
+  getAsistenciasAlumno,
   getAlumnosDeClase,
   getAlumnosDeMateria,
+  getBoletinAlumno,
+  getPreviasAlumno,
   getNotasDeMateria,
   getRecuperacionesMateria,
   guardarNota,
 } from "../../api/api";
+import ModalExportarPlanilla from "../../components/ModalExportarPlanilla";
+import { agruparNotasBoletin, crearDocumentoBoletin } from "../../utils/exportadores/boletinPlanilla.js";
+import { crearPlanillaNotasCurso } from "../../utils/exportadores/planillasAcademicas.js";
 
 // --- Componente Input Individual con Botón de Guardado ---
 const NotaInput = ({ alumnoId, materiaId, trimestre, tipoNota, valorInicial, onNotaGuardada, cicloLectivoId, readOnly, locked = false }) => {
@@ -57,7 +63,7 @@ const NotaInput = ({ alumnoId, materiaId, trimestre, tipoNota, valorInicial, onN
       setTimeout(() => setJustSaved(false), 2000);
     } catch (error) {
       console.error(error);
-      toast.error("Error al guardar la nota");
+      toast.error(error.response?.data?.msg || "Error al guardar la nota");
       setValorLocal(valorInicial ?? "");
     } finally {
       setIsSaving(false);
@@ -210,6 +216,13 @@ const CargarNotas = ({
   claseId,
   cicloLectivoId,
   cicloEstado,
+  cicloAnio,
+  profesorNombre,
+  turno,
+  horaInicio,
+  horaFin,
+  allowBoletinExport = false,
+  materiasBoletin = [],
   readOnly = false,
 }) => {
   const [alumnos, setAlumnos] = useState([]);
@@ -217,6 +230,11 @@ const CargarNotas = ({
   const [notasData, setNotasData] = useState({ "1": {}, "2": {}, "3": {} });
   const [recuperaciones, setRecuperaciones] = useState({});
   const [loading, setLoading] = useState(false);
+  const [boletinAlumnoId, setBoletinAlumnoId] = useState("");
+  const [modalBoletinAbierto, setModalBoletinAbierto] = useState(false);
+  const [documentoBoletin, setDocumentoBoletin] = useState(null);
+  const [modalNotasAbierto, setModalNotasAbierto] = useState(false);
+  const [documentoNotas, setDocumentoNotas] = useState(null);
 
   useEffect(() => {
     if (!materiaId) return;
@@ -226,7 +244,7 @@ const CargarNotas = ({
       try {
         const resAlumnos = claseId
           ? await getAlumnosDeClase(claseId)
-          : await getAlumnosDeMateria(materiaId);
+          : await getAlumnosDeMateria(materiaId, cicloLectivoId);
         setAlumnos(resAlumnos.data || []);
 
         const [t1, t2, t3] = await Promise.all([
@@ -318,6 +336,48 @@ const CargarNotas = ({
     INCOMPLETA: "bg-gray-100 text-gray-600",
   }[estado] || "bg-gray-100 text-gray-600");
   const notasBloqueadas = readOnly || cicloEstado === "RECUPERACION";
+  const abrirBoletinAlumno = async (alumno) => {
+    setBoletinAlumnoId(alumno._id);
+    try {
+      const [notesResponse, previasResponse, attendanceResponse] = await Promise.all([
+        getBoletinAlumno(alumno._id, cicloLectivoId),
+        getPreviasAlumno(alumno._id),
+        getAsistenciasAlumno(alumno._id, cicloLectivoId),
+      ]);
+      const student = { ...alumno, ...(notesResponse.data.alumno || {}) };
+      const materias = agruparNotasBoletin(
+        notesResponse.data.notas || [],
+        materiasBoletin.length ? materiasBoletin : [{ _id: materiaId, nombre: materiaNombre }],
+        cicloEstado,
+      );
+      setDocumentoBoletin(crearDocumentoBoletin({
+        alumno: student,
+        ciclo: { anio: cicloAnio, estado: cicloEstado },
+        curso: { anio, division, profesor: profesorNombre },
+        materias,
+        previas: previasResponse.data,
+        asistencia: attendanceResponse.data,
+      }));
+      setModalBoletinAbierto(true);
+    } catch (error) {
+      console.error("Error preparando el boletín del alumno:", error);
+      toast.error(error.response?.data?.msg || "No se pudo preparar el boletín del alumno.");
+    } finally {
+      setBoletinAlumnoId("");
+    }
+  };
+  const abrirPlanillaNotas = () => {
+    setDocumentoNotas(crearPlanillaNotasCurso({
+      alumnos,
+      notasData,
+      recuperaciones,
+      ciclo: { anio: cicloAnio },
+      cicloEstado,
+      clase: { anio, division, materiaNombre, profesorNombre, turno, horaInicio, horaFin },
+      materiaNombre,
+    }));
+    setModalNotasAbierto(true);
+  };
 
   return (
     <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
@@ -339,25 +399,36 @@ const CargarNotas = ({
               </div>
             </div>
           </div>
-          
+
           {/* Selector de Trimestre Mejorado */}
-          <div className="flex flex-col gap-2">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Trimestre</span>
-            <div className="flex bg-white rounded-xl border-2 border-gray-200 p-1 shadow-md">
-                {["1", "2", "3"].map(t => (
-                    <button 
-                        key={t}
-                        onClick={() => setTrimestre(t)}
-                        className={`px-5 py-2 text-sm font-bold rounded-lg transition-all duration-200 ${
-                            trimestre === t 
-                              ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg scale-105' 
-                              : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                        }`}
-                    >
-                        {t}° Trim.
-                    </button>
-                ))}
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col gap-2">
+              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Trimestre</span>
+              <div className="flex bg-white rounded-xl border-2 border-gray-200 p-1 shadow-md">
+                  {["1", "2", "3"].map(t => (
+                      <button
+                          key={t}
+                          onClick={() => setTrimestre(t)}
+                          className={`px-5 py-2 text-sm font-bold rounded-lg transition-all duration-200 ${
+                              trimestre === t
+                                ? 'bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg scale-105'
+                                : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                          }`}
+                      >
+                          {t}° Trim.
+                      </button>
+                  ))}
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={abrirPlanillaNotas}
+              disabled={!alumnos.length}
+              className="inline-flex items-center gap-2 rounded-xl bg-secondary px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <FileDown size={16} aria-hidden="true" />
+              Exportar planilla
+            </button>
           </div>
         </div>
       </div>
@@ -433,18 +504,34 @@ const CargarNotas = ({
                           }`}
                         >
                             <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-inherit z-10 shadow-sm">
-                                <div className="flex items-center gap-3">
-                                    <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 text-white flex items-center justify-center text-sm font-bold shadow-md">
-                                        {alumno.apellido?.charAt(0)}{alumno.nombre?.charAt(0)}
-                                    </div>
-                                    <div>
-                                        <div className="text-sm font-semibold text-gray-900">
-                                          {alumno.apellido}, {alumno.nombre}
-                                        </div>
-                                        <div className="text-xs text-gray-500">
-                                          Legajo: {alumno.legajo || 'N/A'}
-                                        </div>
-                                    </div>
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="flex min-w-0 items-center gap-3">
+                                      <div className="h-10 w-10 shrink-0 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 text-white flex items-center justify-center text-sm font-bold shadow-md">
+                                          {alumno.apellido?.charAt(0)}{alumno.nombre?.charAt(0)}
+                                      </div>
+                                      <div className="min-w-0">
+                                          <div className="text-sm font-semibold text-gray-900">
+                                            {alumno.apellido ? `${alumno.apellido}, ${alumno.nombre}` : alumno.nombre}
+                                          </div>
+                                          <div className="text-xs text-gray-500">
+                                            DNI: {alumno.dni || 'No informado'}
+                                          </div>
+                                      </div>
+                                  </div>
+                                  {allowBoletinExport && (
+                                    <button
+                                      type="button"
+                                      onClick={() => abrirBoletinAlumno(alumno)}
+                                      disabled={Boolean(boletinAlumnoId)}
+                                      aria-label={`Previsualizar boletín de ${alumno.nombre}`}
+                                      title="Previsualizar boletín"
+                                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-blue-200 bg-white text-blue-700 transition hover:bg-blue-50 disabled:cursor-wait disabled:opacity-50"
+                                    >
+                                      {boletinAlumnoId === alumno._id
+                                        ? <Loader2 size={16} className="animate-spin" />
+                                        : <FileDown size={16} />}
+                                    </button>
+                                  )}
                                 </div>
                             </td>
 
@@ -559,6 +646,16 @@ const CargarNotas = ({
           </span>
         </div>
       </div>
+      <ModalExportarPlanilla
+        abierto={modalBoletinAbierto}
+        onCerrar={() => setModalBoletinAbierto(false)}
+        documento={documentoBoletin}
+      />
+      <ModalExportarPlanilla
+        abierto={modalNotasAbierto}
+        onCerrar={() => setModalNotasAbierto(false)}
+        documento={documentoNotas}
+      />
     </div>
   );
 };

@@ -32,6 +32,11 @@ const PaginaSubirNotas = () => {
               nombre: clase.materia.nombre,
               anio: clase.nivel ?? clase.anio,
               division: clase.division,
+              profesorNombre: clase.profesores?.map((profesor) => profesor.nombre).filter(Boolean).join(", ")
+                || clase.profesor?.nombre
+                || "",
+              horaInicio: clase.horaInicio,
+              horaFin: clase.horaFin,
             });
           }
         });
@@ -186,6 +191,10 @@ const PaginaSubirNotas = () => {
             materiaNombre={materiaActual?.nombre} // Pasamos el nombre para no buscarlo de nuevo
             anio={materiaActual?.anio}
             division={materiaActual?.division}
+            profesorNombre={materiaActual?.profesorNombre}
+            horaInicio={materiaActual?.horaInicio}
+            horaFin={materiaActual?.horaFin}
+            cicloAnio={ciclo?.anio}
             cicloLectivoId={ciclo?._id}
             cicloEstado={ciclo?.estado}
             readOnly={!["ACTIVO", "RECUPERACION"].includes(ciclo?.estado)}
